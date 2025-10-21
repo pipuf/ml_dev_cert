@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, OrdinalEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
 
 def preprocess_data(
@@ -74,6 +76,39 @@ def preprocess_data(
     #   - In order to prevent overfitting and avoid Data Leakage you must use only
     #     working_train_df DataFrame to fit the MinMaxScaler and then use the fitted
     #     model to transform all the datasets.
+   
+    # Get categorical columns
+    categorical_columns = working_train_df.select_dtypes(include=['object']).columns
+    # Get numerical columns ()
+    numerical_columns = working_train_df.select_dtypes(exclude=['object']).columns
 
+    # Split categorical columns into binary and multi-category
+    binary_columns = categorical_columns[working_train_df[categorical_columns].nunique() == 2].tolist()
+    multi_category_columns = categorical_columns[working_train_df[categorical_columns].nunique() > 2].tolist()
+    
+    # ---- Transformers ----
+    numerical_transformer = Pipeline(steps=[ 
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", MinMaxScaler())]) 
+    
+    onehot_transformer = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="constant",fill_value="unknown")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))])
 
-    return None
+    binary_transformer = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OrdinalEncoder())])
+
+    # ---- Combine all transformers ----
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("numerical", numerical_transformer, numerical_columns),
+            ("onehot", onehot_transformer, multi_category_columns),
+            ("bin", binary_transformer, binary_columns)])
+    
+    # Fit and transform the training data, then transform validation and test data
+    working_train_df = preprocessor.fit_transform(working_train_df)
+    working_val_df = preprocessor.transform(working_val_df)
+    working_test_df = preprocessor.transform(working_test_df)
+
+    return working_train_df, working_val_df, working_test_df
